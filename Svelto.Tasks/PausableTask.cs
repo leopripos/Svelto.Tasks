@@ -11,6 +11,7 @@
 using Svelto.Utilities;
 using System;
 using System.Collections;
+using UnityEngine;
 
 namespace Svelto.Tasks
 {
@@ -22,7 +23,9 @@ namespace Svelto.Tasks
     }
 
     public interface IPausableTask:IEnumerator
-    {}
+    {
+        Action OnExplicitlyStopped { get; set;  }
+    }
     
     //The Continuation Wrapper contains a valid
     //value until the task is not stopped.
@@ -82,7 +85,9 @@ namespace Svelto.Tasks.Internal
     sealed class PausableTask : IPausableTask, ITaskRoutine
     {
         const string CALL_START_FIRST_ERROR = "Enumerating PausableTask without starting it, please call Start() first";
-
+        
+        public Action OnExplicitlyStopped { get; set;  }
+        
         /// <summary>
         /// Calling SetScheduler, SetEnumeratorProvider, SetEnumerator
         /// on a running task won't stop the task until either 
@@ -134,6 +139,12 @@ namespace Svelto.Tasks.Internal
         public void Stop()
         {
             _explicitlyStopped = true;
+
+            if (OnExplicitlyStopped != null)
+            {
+                OnExplicitlyStopped();
+                OnExplicitlyStopped = null;
+            }
 
             ThreadUtility.MemoryBarrier();
         }
@@ -395,23 +406,21 @@ namespace Svelto.Tasks.Internal
             var originalEnumerator = _taskEnumerator ?? _taskGenerator();
             
             //TaskRoutine case only!!
-            if (_started == true && _pool == null)
+            ThreadUtility.MemoryBarrier();
+            if (_pool == null 
+                && _completed == false 
+                && _started == true
+                && _explicitlyStopped == true)
             {
                 _pendingEnumerator = originalEnumerator;
                 _pendingContinuationWrapper = _continuationWrapper;
-            
+                _pendingRestart = true;
+                
+                 _continuationWrapper = new ContinuationWrapper();
+                
                 ThreadUtility.MemoryBarrier();
-                if (_completed == false)
-                {
-                    _pendingRestart = true; 
-                    ThreadUtility.MemoryBarrier();
-                    
-                    Stop(); //if it's reused, must stop naturally
-                    
-                    _continuationWrapper = new ContinuationWrapper();
 
-                    return;
-                }
+                 return;
             }
             
             Restart(originalEnumerator);
@@ -421,18 +430,13 @@ namespace Svelto.Tasks.Internal
         {
             DesignByContract.Check.Require(_runner != null, "SetScheduler function has never been called");
             
-            if (_taskEnumerator != null && _completed == true)
+            if (_taskEnumerator != null && _taskEnumeratorJustSet == false)
             {
-                if (_taskEnumeratorJustSet == false)
-                {
-                    DesignByContract.Check.Assert(_compilerGenerated == false, "Cannot restart an IEnumerator without a valid Reset function, use SetEnumeratorProvider instead");
-                    
-                    task.Reset();
-                }
+                DesignByContract.Check.Assert(_compilerGenerated == false, "Cannot restart an IEnumerator without a valid Reset function, use SetEnumeratorProvider instead");
+                
+                task.Reset();
             }
             
-            DesignByContract.Check.Assert(_compilerGenerated == false, "Cannot restart an IEnumerator without a valid Reset function, use SetEnumeratorProvider instead");
-
             CleanUpOnRestart();
             SetTask(task);
 
