@@ -1,6 +1,7 @@
 ﻿#if UNITY_EDITOR
 using Svelto.DataStructures;
 using Svelto.Tasks.Internal;
+using UnityEngine;
 
 namespace Svelto.Tasks
 {
@@ -8,18 +9,18 @@ namespace Svelto.Tasks
     {
         public GizmosMonoRunner(string name)
         {
-            var go = UnityCoroutineRunner.InitializeGameobject(name);
+            UnityCoroutineRunner.InitializeGameObject(name, ref _go);
 
             var coroutines = new FasterList<IPausableTask>(NUMBER_OF_INITIAL_COROUTINE);
-            var runnerBehaviour = go.AddComponent<RunnerBehaviourGizmos>();
-            var runnerBehaviourForUnityCoroutine = go.AddComponent<RunnerBehaviour>();
+            var runnerBehaviour = _go.AddComponent<RunnerBehaviourGizmos>();
+            var runnerBehaviourForUnityCoroutine = _go.AddComponent<RunnerBehaviour>();
 
             _info = new UnityCoroutineRunner.RunningTasksInfo() { runnerName = name };
 
             runnerBehaviour.StartGizmosCoroutine(UnityCoroutineRunner.Process
                 (_newTaskRoutines, coroutines, _flushingOperation, _info,
-                    UnityCoroutineRunner.StandardTasksFlushing,
-                    runnerBehaviourForUnityCoroutine, StartCoroutine));
+                 UnityCoroutineRunner.StandardTasksFlushing,
+                 runnerBehaviourForUnityCoroutine, StartCoroutine));
         }
 
         protected override UnityCoroutineRunner.RunningTasksInfo info
@@ -34,6 +35,7 @@ namespace Svelto.Tasks
         readonly ThreadSafeQueue<IPausableTask> _newTaskRoutines = new ThreadSafeQueue<IPausableTask>();
         readonly UnityCoroutineRunner.FlushingOperation _flushingOperation = new UnityCoroutineRunner.FlushingOperation();
         readonly UnityCoroutineRunner.RunningTasksInfo _info;
+        readonly GameObject _go;
 
         const int NUMBER_OF_INITIAL_COROUTINE = 3;
     }
