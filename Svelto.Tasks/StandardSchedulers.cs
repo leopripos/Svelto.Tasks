@@ -1,56 +1,86 @@
+#if UNITY_5 || UNITY_5_3_OR_NEWER
+using System.Collections;
+using Svelto.Tasks.Unity;
+#endif
+
 namespace Svelto.Tasks
 {
     public static class StandardSchedulers
     {
-        static MultiThreadRunner _multiThreadScheduler;
+        static MultiThreadRunner<IEnumerator> _multiThreadScheduler;
 #if UNITY_5 || UNITY_5_3_OR_NEWER
-        static CoroutineMonoRunner _coroutineScheduler;
-        static PhysicMonoRunner _physicScheduler;
-        static LateMonoRunner _lateScheduler;
-        static UpdateMonoRunner _updateScheduler;
+        static CoroutineMonoRunner<IEnumerator> _coroutineScheduler;
+        static PhysicMonoRunner<IEnumerator> _physicScheduler;
+        static LateMonoRunner<IEnumerator> _lateScheduler;
+        static UpdateMonoRunner<IEnumerator> _updateScheduler;
+        static EarlyUpdateMonoRunner<IEnumerator> _earlyScheduler;
 #endif
-
-        public static IRunner multiThreadScheduler { get { if (_multiThreadScheduler == null) _multiThreadScheduler = new MultiThreadRunner("MultiThreadRunner", true);
+        
+        public static IRunner<IEnumerator> multiThreadScheduler { get { if (_multiThreadScheduler == null) _multiThreadScheduler = new MultiThreadRunner("MultiThreadRunner", false);
             return _multiThreadScheduler;
         } }
-
+        
 #if UNITY_5 || UNITY_5_3_OR_NEWER
-        public static IRunner coroutineScheduler { get { if (_coroutineScheduler == null) _coroutineScheduler = new CoroutineMonoRunner("StandardCoroutineRunner");
+        public static IRunner<IEnumerator> standardScheduler 
+        { 
+            get 
+            { 
+                return coroutineScheduler;
+            } 
+        }
+        public static IRunner<IEnumerator> coroutineScheduler { get { if (_coroutineScheduler == null) _coroutineScheduler = new CoroutineMonoRunner("StandardCoroutineRunner");
             return _coroutineScheduler;
         } }
-        public static IRunner physicScheduler { get { if (_physicScheduler == null) _physicScheduler = new PhysicMonoRunner("StandardPhysicRunner");
+        public static IRunner<IEnumerator> physicScheduler { get { if (_physicScheduler == null) _physicScheduler = new PhysicMonoRunner("StandardPhysicRunner");
             return _physicScheduler;
         } }
-        public static IRunner lateScheduler { get { if (_lateScheduler == null) _lateScheduler = new LateMonoRunner("StandardLateRunner");
+        public static IRunner<IEnumerator> lateScheduler { get { if (_lateScheduler == null) _lateScheduler = new LateMonoRunner("StandardLateRunner");
             return _lateScheduler;
         } }
-        public static IRunner updateScheduler { get { if (_updateScheduler == null) _updateScheduler = new UpdateMonoRunner("StandardMonoRunner");
+        public static IRunner<IEnumerator> earlyScheduler { get { if (_earlyScheduler == null) _earlyScheduler = new EarlyUpdateMonoRunner("EarlyUpdateMonoRunner");
+            return _earlyScheduler;
+        } }
+        public static IRunner<IEnumerator> updateScheduler { get { if (_updateScheduler == null) _updateScheduler = new UpdateMonoRunner("StandardMonoRunner");
             return _updateScheduler;
         } }
+
+        internal static void StartYieldInstruction(this IEnumerator instruction)
+        {
+            (coroutineScheduler as CoroutineMonoRunner).StartYieldInstruction(instruction);
+        }
+#else
+        public static IRunner<IEnumerator> standardScheduler 
+        { 
+            get 
+            { 
+                return _multiThreadScheduler;
+            } 
+        }
 #endif
 
-        //physicScheduler -> updateScheduler -> coroutineScheduler -> lateScheduler
+        //physicScheduler -> earlyScheduler -> updateScheduler -> coroutineScheduler -> lateScheduler
 
         internal static void KillSchedulers()
         {
-            if (_multiThreadScheduler != null)
+            if (_multiThreadScheduler != null && multiThreadScheduler.isKilled == false)
                 _multiThreadScheduler.Dispose();
             _multiThreadScheduler = null;
             
 #if UNITY_5 || UNITY_5_3_OR_NEWER
             if (_coroutineScheduler != null)
-                _coroutineScheduler.StopAllCoroutines();
+                 _coroutineScheduler.Dispose();
             if (_physicScheduler != null)
-                _physicScheduler.StopAllCoroutines();
+                _physicScheduler.Dispose();
             if (_lateScheduler != null)
-                _lateScheduler.StopAllCoroutines();
+                _lateScheduler.Dispose();
             if (_updateScheduler != null)
-                _updateScheduler.StopAllCoroutines();
+                _updateScheduler.Dispose();
             
             _coroutineScheduler = null;
             _physicScheduler = null;
             _lateScheduler = null;
             _updateScheduler = null;
+            _earlyScheduler = null;
 #endif
         }
     }

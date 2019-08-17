@@ -1,23 +1,45 @@
 #if UNITY_5 || UNITY_5_3_OR_NEWER
-
+using System;
+using System.Collections;
 using Svelto.DataStructures;
-using Svelto.Tasks.Internal;
+using Svelto.Tasks.Unity.Internal;
+
 #if TASKS_PROFILER_ENABLED
 using Svelto.Tasks.Profiler;
 #endif
 
-namespace Svelto.Tasks
+namespace Svelto.Tasks.Unity
 {
-    public abstract class MonoRunner : IRunner
-    {
-        public bool paused { set; get; }
-        public bool isStopping { get { return flushingOperation.stopped; } }
-        
-        public int  numberOfRunningTasks { get { return info.count; } }
+    /// <summary>
+    /// Remember, unless you are using the StandardSchedulers, nothing hold your runners. Be careful that if you
+    /// don't hold a reference, they will be garbage collected even if tasks are still running
+    /// </summary>
 
-        protected abstract UnityCoroutineRunner.RunningTasksInfo info { get; }
-        protected abstract ThreadSafeQueue<IPausableTask> newTaskRoutines { get; }
-        protected abstract UnityCoroutineRunner.FlushingOperation flushingOperation { get; }
+    public abstract class MonoRunner<T> : IRunner<T> where T:IEnumerator
+    {
+        public bool isPaused
+        {
+            get { return _flushingOperation.paused; }
+            set { _flushingOperation.paused = value; }
+        }
+
+        public bool isStopping { get { return _flushingOperation.stopped; } }
+        public bool isKilled { get {return _flushingOperation.kill;} }
+        public int  numberOfRunningTasks { get { return _coroutines.Count; } }
+        public int numberOfQueuedTasks { get { return _newTaskRoutines.Count; } }
+        
+        protected MonoRunner(string name)
+        {
+            _name = name;
+        }
+
+        ~MonoRunner()
+        {
+            Console.LogWarning("MonoRunner has been garbage collected, this could have serious" +
+                                                "consequences, are you sure you want this? ".FastConcat(_name));
+            
+            ShutDown();
+        }
         
         /// <summary>
         /// TaskRunner doesn't stop executing tasks between scenes
@@ -25,52 +47,46 @@ namespace Svelto.Tasks
         /// </summary>
         public virtual void StopAllCoroutines()
         {
-            paused = false;
+            isPaused = false;
 
-            UnityCoroutineRunner.StopRoutines(flushingOperation);
+            UnityCoroutineRunner<T>.StopRoutines(_flushingOperation);
 
-            newTaskRoutines.Clear();
-        }
-
-        public virtual void StartCoroutineThreadSafe(IPausableTask task)
-        {
-            paused = false;
-
-            if (task == null) return;
-
-            newTaskRoutines.Enqueue(task); //careful this could run on another thread!
-        }
-
-        public virtual void StartCoroutine(IPausableTask task)
-        {
-            paused = false;
-
-            if (ExecuteFirstTaskStep(task) == true)
-                newTaskRoutines.Enqueue(task); //careful this could run on another thread!
-        }
-
-        bool ExecuteFirstTaskStep(IPausableTask task)
-        {
-            if (task == null)
-                return false;
-
-            //if the runner is not ready to run new tasks, it
-            //cannot run immediatly but it must be saved
-            //in the newTaskRoutines to be executed once possible
-            if (isStopping == true)
-                return true;
+            _newTaskRoutines.Clear();
             
-#if TASKS_PROFILER_ENABLED && UNITY_EDITOR
-            return UnityCoroutineRunner.TASK_PROFILER.MonitorUpdateDuration(task, info.runnerName);
-#else
-            return task.MoveNext();
-#endif
+            _flushingOperation.kill = true;
         }
 
-        public void Dispose()
+        public virtual void StartCoroutine(ISveltoTask<T> task)
+        {
+            isPaused = false;
+
+            _newTaskRoutines.Enqueue(task); //careful this could run on another thread!
+        }
+
+        void ShutDown()
         {
             StopAllCoroutines();
+
+            _newTaskRoutines.Clear();
+            _coroutines.Clear();
         }
+
+        public virtual void Dispose()
+        {
+            ShutDown();
+
+            GC.SuppressFinalize(this);
+        }
+        
+        protected readonly ThreadSafeQueue<ISveltoTask<T>> _newTaskRoutines = new ThreadSafeQueue<ISveltoTask<T>>();
+        protected readonly FasterList<ISveltoTask<T>> _coroutines =
+            new FasterList<ISveltoTask<T>>(NUMBER_OF_INITIAL_COROUTINE);
+        internal UnityCoroutineRunner<T>.FlushingOperation _flushingOperation =
+            new UnityCoroutineRunner<T>.FlushingOperation();
+
+        readonly string _name;
+
+        const int NUMBER_OF_INITIAL_COROUTINE = 3;
     }
 }
 #endif

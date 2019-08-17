@@ -1,4 +1,3 @@
-using System;
 using System.Collections;
 using Svelto.Tasks.Internal;
 
@@ -25,34 +24,34 @@ namespace Svelto.Tasks
         /// <returns>
         /// New reusable TaskRoutine
         /// </returns>
-        public ITaskRoutine AllocateNewTaskRoutine()
+        public ITaskRoutine<IEnumerator> AllocateNewTaskRoutine()
         {
-            return new PausableTask().SetScheduler(_runner);
+            return new TaskRoutine<IEnumerator>(StandardSchedulers.standardScheduler);
+        }
+        
+        public ITaskRoutine<T> AllocateNewTaskRoutine<T>(IRunner<T> runner) where T:IEnumerator
+        {
+            return new TaskRoutine<T>(runner);
+        }
+        
+        public ITaskRoutine<IEnumerator> AllocateNewTaskRoutine(IRunner<IEnumerator> runner)
+        {
+            return new TaskRoutine<IEnumerator>(runner);
         }
 
         public void PauseAllTasks()
         {
-            _runner.paused = true;
+            StandardSchedulers.standardScheduler.isPaused = true;
         }
 
         public void ResumeAllTasks()
         {
-            _runner.paused = false;
+            StandardSchedulers.standardScheduler.isPaused = false;
         }
 
-        public ContinuationWrapper Run(Func<IEnumerator> taskGenerator)
+        public IContinuationWrapper Run(IEnumerator task)
         {
-            return RunOnSchedule(_runner, taskGenerator);
-        }
-
-        public ContinuationWrapper Run(IEnumerator task)
-        {
-            return RunOnSchedule(_runner, task);
-        }
-
-        public ContinuationWrapper RunOnSchedule(IRunner runner, Func<IEnumerator> taskGenerator)
-        {
-            return _taskPool.RetrieveTaskFromPool().SetScheduler(runner).SetEnumeratorProvider(taskGenerator).Start();
+            return RunOnScheduler(StandardSchedulers.standardScheduler, task);
         }
 
         /// <summary>
@@ -61,35 +60,9 @@ namespace Svelto.Tasks
         /// <param name="runner"></param>
         /// <param name="task"></param>
         /// <returns></returns>
-        public ContinuationWrapper RunOnSchedule(IRunner runner, IEnumerator task)
+        public IContinuationWrapper RunOnScheduler(IRunner<IEnumerator> runner, IEnumerator task) 
         {
-            return _taskPool.RetrieveTaskFromPool().SetScheduler(runner).SetEnumerator(task).Start();
-        }
-
-        /// <summary>
-        /// all the instructions are executed on the selected runner
-        /// </summary>
-        /// <param name="taskGenerator"></param>
-        /// <returns></returns>
-        public ContinuationWrapper ThreadSafeRun(Func<IEnumerator> taskGenerator)
-        {
-            return ThreadSafeRunOnSchedule(_runner, taskGenerator);
-        }
-
-        public ContinuationWrapper ThreadSafeRun(IEnumerator task)
-        {
-            return ThreadSafeRunOnSchedule(_runner, task);
-        }
-
-        public ContinuationWrapper ThreadSafeRunOnSchedule(IRunner runner, Func<IEnumerator> taskGenerator)
-        {
-            return _taskPool.RetrieveTaskFromPool().SetScheduler(runner).SetEnumeratorProvider(taskGenerator)
-                            .ThreadSafeStart();
-        }
-
-        public ContinuationWrapper ThreadSafeRunOnSchedule(IRunner runner, IEnumerator task)
-        {
-            return _taskPool.RetrieveTaskFromPool().SetScheduler(runner).SetEnumerator(task).ThreadSafeStart();
+            return _taskPool.RetrieveTaskFromPool().Start(runner, task);
         }
 
         public static void StopAndCleanupAllDefaultSchedulers()
@@ -99,7 +72,6 @@ namespace Svelto.Tasks
             if (_instance != null)
             {
                 _instance._taskPool = null;
-                _instance._runner   = null;
                 _instance = null;
             }
         }
@@ -112,14 +84,9 @@ namespace Svelto.Tasks
          static void InitInstance()
          {
             _instance = new TaskRunner();
-#if UNITY_5_3_OR_NEWER || UNITY_5
-            _instance._runner = StandardSchedulers.coroutineScheduler;
-#else
-            _instance._runner = new MultiThreadRunner("TaskThread");
-#endif
-            _instance._taskPool = new PausableTaskPool();
+            _instance._taskPool = new SveltoTasksPool();
 
-#if TASKS_PROFILER_ENABLED && UNITY_EDITOR
+#if UNITY_EDITOR && TASKS_PROFILER_ENABLED
             var debugTasksObject = UnityEngine.GameObject.Find("Svelto.Tasks.Profiler");
             if (debugTasksObject == null)
             {
@@ -130,7 +97,6 @@ namespace Svelto.Tasks
 #endif
         }
 
-        IRunner          _runner;
-        PausableTaskPool _taskPool;
+        SveltoTasksPool _taskPool;
      }
 }

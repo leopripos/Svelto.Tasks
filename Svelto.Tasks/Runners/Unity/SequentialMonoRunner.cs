@@ -1,55 +1,32 @@
 #if UNITY_5 || UNITY_5_3_OR_NEWER
+using System.Collections;
 using Svelto.DataStructures;
-using Svelto.Tasks.Internal;
-using UnityEngine;
+using Svelto.Tasks.Unity.Internal;
 
-//SequentialMonoRunner doesn't execute the next
-//coroutine in the queue until the previous one is completed
-
-namespace Svelto.Tasks
+namespace Svelto.Tasks.Unity
 {
-    public class SequentialMonoRunner : MonoRunner
+    /// <summary>
+    //SequentialMonoRunner doesn't execute the next
+    //coroutine in the queue until the previous one is completed
+    /// </summary>
+    public class SequentialMonoRunner<T> : MonoRunner<T> where T:IEnumerator
     {
-        public SequentialMonoRunner(string name)
+        public SequentialMonoRunner(string name):base(name)
         {
-            UnityCoroutineRunner.InitializeGameObject(name, ref _go);
+            var info = new UnityCoroutineRunner<T>.RunningTasksInfo { runnerName = name };
 
-            var coroutines = new FasterList<IPausableTask>(NUMBER_OF_INITIAL_COROUTINE);
-            var runnerBehaviour = _go.AddComponent<RunnerBehaviourUpdate>();
-            var runnerBehaviourForUnityCoroutine = _go.AddComponent<RunnerBehaviour>();
-
-            _info = new UnityCoroutineRunner.RunningTasksInfo { runnerName = name };
-
-            runnerBehaviour.StartUpdateCoroutine(UnityCoroutineRunner.Process
-            (_newTaskRoutines, coroutines, _flushingOperation, _info,
-                SequentialTasksFlushing,
-                runnerBehaviourForUnityCoroutine, StartCoroutine));
+            UnityCoroutineRunner<T>.StartUpdateCoroutine(new UnityCoroutineRunner<T>.Process<UnityCoroutineRunner<T>.RunningTasksInfo>
+            (_newTaskRoutines, _coroutines, _flushingOperation, info));
         }
 
-        protected override UnityCoroutineRunner.RunningTasksInfo info
-        { get { return _info; } }
-
-        protected override ThreadSafeQueue<IPausableTask> newTaskRoutines
-        { get { return _newTaskRoutines; } }
-
-        protected override UnityCoroutineRunner.FlushingOperation flushingOperation
-        { get { return _flushingOperation; } }
-        
         static void SequentialTasksFlushing(
-            ThreadSafeQueue<IPausableTask> newTaskRoutines, 
-            FasterList<IPausableTask> coroutines, 
-            UnityCoroutineRunner.FlushingOperation flushingOperation)
+            ThreadSafeQueue<ISveltoTask<IEnumerator>> newTaskRoutines, 
+            FasterList<ISveltoTask<IEnumerator>> coroutines, 
+            UnityCoroutineRunner<T>.FlushingOperation flushingOperation)
         {
             if (newTaskRoutines.Count > 0 && coroutines.Count == 0)
                 newTaskRoutines.DequeueInto(coroutines, 1);
         }
-
-        readonly ThreadSafeQueue<IPausableTask>         _newTaskRoutines   = new ThreadSafeQueue<IPausableTask>();
-        readonly UnityCoroutineRunner.FlushingOperation _flushingOperation = new UnityCoroutineRunner.FlushingOperation();
-        readonly UnityCoroutineRunner.RunningTasksInfo  _info;
-        readonly GameObject                             _go;
-
-        const int NUMBER_OF_INITIAL_COROUTINE = 3;
     }
 }
 #endif

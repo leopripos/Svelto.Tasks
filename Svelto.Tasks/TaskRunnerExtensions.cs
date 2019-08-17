@@ -1,3 +1,4 @@
+using System;
 using Svelto.Tasks;
 using System.Collections;
 using Svelto.Utilities;
@@ -10,28 +11,35 @@ public static class TaskRunnerExtensions
     /// <param name="runner"></param>
     /// <param name="task"></param>
     /// <returns></returns>
-    public static ContinuationWrapper RunOnSchedule(this IEnumerator enumerator, IRunner runner)
+    public static IContinuationWrapper RunOnScheduler(this IEnumerator enumerator, IRunner<IEnumerator> runner)
     {
-        return TaskRunner.Instance.RunOnSchedule(runner, enumerator);
-    }
-    /// <summary>
-    /// all the instructions are executed on the selected runner
-    /// </summary>
-    /// <param name="taskGenerator"></param>
-    /// <returns></returns>
-    public static ContinuationWrapper ThreadSafeRunOnSchedule(this IEnumerator enumerator, IRunner runner)
-    {
-        return TaskRunner.Instance.ThreadSafeRunOnSchedule(runner, enumerator);
+        return TaskRunner.Instance.RunOnScheduler(runner, enumerator);
     }
 
-    public static ContinuationWrapper Run(this IEnumerator enumerator)
+    public static IContinuationWrapper Run(this IEnumerator enumerator)
     {
         return TaskRunner.Instance.Run(enumerator);
     }
     
-    public static void Complete(this IEnumerator enumerator)
+    public static void Complete(this IEnumerator enumerator, int _timeout = -1)
     {
-        while (enumerator.MoveNext()) ThreadUtility.Yield();
+        var quickIterations = 0;
+
+        if (_timeout > 0)
+        {
+            var then  = DateTime.Now.AddMilliseconds(_timeout);
+            var valid = true;
+
+            while (enumerator.MoveNext() && 
+                   (valid = DateTime.Now < then)) ThreadUtility.Wait(ref quickIterations);
+
+            if (valid == false)
+                throw new Exception("synchronous task timed out, increase time out or check if it got stuck");
+        }
+        else
+        {
+            while (enumerator.MoveNext()) ThreadUtility.Wait(ref quickIterations);
+        }
     }
 }
 

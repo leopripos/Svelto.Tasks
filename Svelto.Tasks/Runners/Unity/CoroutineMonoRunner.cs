@@ -1,43 +1,52 @@
 #if UNITY_5 || UNITY_5_3_OR_NEWER
-using Svelto.DataStructures;
-using Svelto.Tasks.Internal;
+using System.Collections;
+using Svelto.Tasks.Unity.Internal;
 using UnityEngine;
 
-namespace Svelto.Tasks
+namespace Svelto.Tasks.Unity
 {
-    public class CoroutineMonoRunner : MonoRunner
+    /// <summary>
+    /// while you can instantiate a MonoRunner, you should use the standard one whenever possible. Instantiating
+    /// multiple runners will defeat the initial purpose to get away from the Unity monobehaviours internal updates.
+    /// MonoRunners are disposable though, so at least be sure to dispose the ones that are unused
+    /// CoroutineMonoRunner is the only Unity based Svelto.Tasks runner that can handle Unity YieldInstructions
+    /// You should use YieldInstructions only when extremely necessary as often an Svelto.Tasks IEnumerator
+    /// replacement is available.
+    /// </summary>
+    public class CoroutineMonoRunner : CoroutineMonoRunner<IEnumerator>
     {
-        public CoroutineMonoRunner(string name)
+        public CoroutineMonoRunner(string name) : base(name)
         {
-            UnityCoroutineRunner.InitializeGameObject(name, ref _go);
-            var coroutines = new FasterList<IPausableTask>(NUMBER_OF_INITIAL_COROUTINE);
+        }
+    }
+    public class CoroutineMonoRunner<T> : MonoRunner<T> where T:IEnumerator
+    {
+        public CoroutineMonoRunner(string name):base(name)
+        {
+            var info = new UnityCoroutineRunner<T>.RunningTasksInfo { runnerName = name };
 
-            RunnerBehaviour runnerBehaviour = _go.AddComponent<RunnerBehaviour>();
-            var runnerBehaviourForUnityCoroutine = _go.AddComponent<RunnerBehaviour>();
+            _processEnumerator = new UnityCoroutineRunner<T>.Process<UnityCoroutineRunner<T>.RunningTasksInfo>
+                (_newTaskRoutines, _coroutines, _flushingOperation, info);
+            
+            UnityCoroutineRunner<T>.StartCoroutine(_processEnumerator);
+        }
+        
+        public override void StartCoroutine(ISveltoTask<T> task)
+        {
+            isPaused = false;
 
-            _info = new UnityCoroutineRunner.RunningTasksInfo() { runnerName = name };
-
-            runnerBehaviour.StartCoroutine(UnityCoroutineRunner.Process
-                (_newTaskRoutines, coroutines, _flushingOperation, _info,
-                 UnityCoroutineRunner.StandardTasksFlushing,
-                 runnerBehaviourForUnityCoroutine, StartCoroutine));
+            _newTaskRoutines.Enqueue(task);
+            _flushingOperation.immediate = true;
+            _processEnumerator.MoveNext();
+            _flushingOperation.immediate = false;
+        }
+        
+        public void StartYieldInstruction(IEnumerator instruction)
+        {
+            UnityCoroutineRunner<T>.StartCoroutine(instruction);
         }
 
-        protected override UnityCoroutineRunner.RunningTasksInfo info
-        { get { return _info; } }
-
-        protected override ThreadSafeQueue<IPausableTask> newTaskRoutines
-        { get { return _newTaskRoutines; } }
-
-        protected override UnityCoroutineRunner.FlushingOperation flushingOperation
-        { get { return _flushingOperation; } }
-
-        readonly ThreadSafeQueue<IPausableTask>         _newTaskRoutines = new ThreadSafeQueue<IPausableTask>();
-        readonly UnityCoroutineRunner.FlushingOperation _flushingOperation = new UnityCoroutineRunner.FlushingOperation();
-        readonly UnityCoroutineRunner.RunningTasksInfo  _info;
-        readonly GameObject                             _go;
-
-        const int NUMBER_OF_INITIAL_COROUTINE = 3;
+        readonly UnityCoroutineRunner<T>.Process<UnityCoroutineRunner<T>.RunningTasksInfo> _processEnumerator;
     }
 }
 #endif
